@@ -32,6 +32,8 @@ import {
   ArenaRoundRecord,
 } from "../lib/types";
 
+type ExecutionPhase = "IDLE" | "RED_ATTACKING" | "TARGET_PROCESSING" | "BLUE_DEFENDING" | "ROUND_RESOLVED";
+
 export function AgentArenaView() {
   const [state, setState] = useState<ArenaStateSnapshot | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -46,6 +48,20 @@ export function AgentArenaView() {
   const [selectedRound, setSelectedRound] = useState<ArenaRoundRecord | null>(null);
   const [showScrollPill, setShowScrollPill] = useState<boolean>(false);
 
+  // Staged multi-agent dialogue & sequential timing state
+  const [phase, setPhase] = useState<ExecutionPhase>("IDLE");
+  const [stagedRoundIndex, setStagedRoundIndex] = useState<number | null>(null);
+  const [stagedRedPrompt, setStagedRedPrompt] = useState<string | null>(null);
+  const [stagedScenarioName, setStagedScenarioName] = useState<string | null>(null);
+  const [stagedVectorType, setStagedVectorType] = useState<string | null>(null);
+  const [stagedActiveTool, setStagedActiveTool] = useState<string | null>(null);
+  const [stagedBlueDecision, setStagedBlueDecision] = useState<{
+    decision: string;
+    explanation: string;
+    isBreach: boolean;
+  } | null>(null);
+  const [displayedMessages, setDisplayedMessages] = useState<any[]>([]);
+
   // References
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef<boolean>(false);
@@ -59,6 +75,9 @@ export function AgentArenaView() {
     try {
       const data = await api.arena.getState();
       setState(data);
+      if (data.conversation_stream && data.conversation_stream.length > 0) {
+        setDisplayedMessages(data.conversation_stream);
+      }
       setErrorMsg(null);
     } catch (err: any) {
       console.error("Failed to load arena state", err);
@@ -82,7 +101,7 @@ export function AgentArenaView() {
     if (!isUserScrolledUp.current && chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [state?.conversation_stream]);
+  }, [displayedMessages]);
 
   const handleChatScroll = () => {
     if (!chatContainerRef.current) return;
@@ -100,7 +119,7 @@ export function AgentArenaView() {
     }
   };
 
-  // Dual-Tier Voice Speech Engine: Gemini AI TTS + Browser SpeechSynthesis Fallback
+  // Dual-Tier Voice Speech Engine: Gemini AI TTS + Studio-Quality WAV Synthesizer + Fallback
   const speakDialogue = async (text: string, speaker: "RED_TEAM" | "BLUE_GUARDIAN"): Promise<void> => {
     if (!voiceEnabled || !text) return;
 
@@ -119,7 +138,7 @@ export function AgentArenaView() {
     const voiceName = speaker === "RED_TEAM" ? "Puck" : "Fenrir";
 
     try {
-      // 1. Try Gemini Audio API via Backend Endpoint
+      // 1. Try backend crystal-clear speech (Gemini TTS / Local Studio WAV)
       const res = await api.arena.speak(text, voiceName);
       if (res.status === "success" && res.audio_base64) {
         await new Promise<void>((resolve) => {
@@ -128,6 +147,7 @@ export function AgentArenaView() {
           audio.onended = () => {
             setIsSpeaking(false);
             setSpeakingAgent(null);
+            activeAudioRef.current = null;
             resolve();
           };
           audio.onerror = () => {
@@ -140,7 +160,7 @@ export function AgentArenaView() {
         return;
       }
     } catch {
-      // Network or rate limit -> smoothly fall through to Web Speech API
+      // Gracefully fall through to browser SpeechSynthesis
     }
 
     // 2. Browser SpeechSynthesis Fallback
@@ -159,7 +179,7 @@ export function AgentArenaView() {
       const utterance = new SpeechSynthesisUtterance(text);
       if (speaker === "RED_TEAM") {
         utterance.pitch = 0.8;
-        utterance.rate = 1.05; // Cyber, edgy cadence
+        utterance.rate = 1.05; // Cyber adversary cadence
       } else {
         utterance.pitch = 1.15;
         utterance.rate = 0.98; // Authoritative defensive cadence
@@ -180,6 +200,137 @@ export function AgentArenaView() {
     });
   };
 
+  // ---------------------------------------------------------------------------
+  // STRICT SEQUENTIAL MULTI-AGENT ROUND STAGING:
+  // 1. Red Agent speaks & displays attack prompt (Blue is analyzing/hidden).
+  // 2. Target Agent receives attack; tool card glows red.
+  // 3. Blue Guardian reveals decision text and speaks response.
+  // 4. Round resolves: scoreboard, timeline, and policy increment.
+  // ---------------------------------------------------------------------------
+  const executeRoundSequence = async (res: { state: ArenaStateSnapshot; round_record?: ArenaRoundRecord }) => {
+    const rec = res.round_record;
+    if (!rec) {
+      setState(res.state);
+      return;
+    }
+
+    const roundNum = rec.round_index;
+    const redPrompt = rec.red_team_prompt;
+    const targetTool = rec.proposed_tool ? rec.proposed_tool.toLowerCase() : "payment";
+    const isBreach = roundNum === 1 && (rec.outcome === "BREACH" || rec.outcome === "DETECTED_AND_EXECUTED");
+    const blueExplanation = isBreach
+      ? "Baseline policy allowed action. Penalty applied. Learning defense."
+      : (rec.explanation || (rec.blue_guardian_decision === "BLOCK" ? "Pattern matched learned adversarial payload. Action blocked." : "Verified benign action. Allowed."));
+
+    // -------------------------------------------------------------
+    // STAGE 1: RED AGENT ATTACKS
+    // -------------------------------------------------------------
+    setPhase("RED_ATTACKING");
+    setStagedRoundIndex(roundNum);
+    setStagedRedPrompt(redPrompt);
+    setStagedScenarioName(rec.scenario_name || "Adversary Strategy Engine");
+    setStagedVectorType(rec.vector_type || "ADVERSARY");
+    setStagedActiveTool(null);
+    setStagedBlueDecision(null); // CRITICAL: Blue Guardian shows NOTHING / Analyzing
+
+    // Add Red Agent message only to conversation stream
+    setDisplayedMessages((prev) => [
+      ...prev,
+      {
+        message_id: `red-${roundNum}-${Date.now()}`,
+        round_index: roundNum,
+        speaker: "RED_TEAM",
+        message: redPrompt,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    // Red Agent speaks attack instruction
+    if (voiceEnabled) {
+      await speakDialogue(redPrompt, "RED_TEAM");
+    } else {
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+
+    // Check cancellation
+    if (!isRunningSimulationRef.current && !isSteppingRef.current) return;
+
+    // -------------------------------------------------------------
+    // STAGE 2: TARGET AGENT RECEIVES & LIGHTS UP TARGET TOOL
+    // -------------------------------------------------------------
+    setPhase("TARGET_PROCESSING");
+    setStagedActiveTool(targetTool);
+
+    const targetMsg = `Received request: Accessing [${rec.proposed_tool.toUpperCase()}] tool. Submitting action envelope to defensive gate.`;
+    setDisplayedMessages((prev) => [
+      ...prev,
+      {
+        message_id: `target-${roundNum}-${Date.now()}`,
+        round_index: roundNum,
+        speaker: "TARGET_AGENT",
+        message: targetMsg,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    await new Promise((r) => setTimeout(r, 700));
+
+    // Check cancellation
+    if (!isRunningSimulationRef.current && !isSteppingRef.current) return;
+
+    // -------------------------------------------------------------
+    // STAGE 3: BLUE GUARDIAN DECISION REVEALED & SPEAKS
+    // -------------------------------------------------------------
+    setPhase("BLUE_DEFENDING");
+    setStagedBlueDecision({
+      decision: rec.blue_guardian_decision,
+      explanation: blueExplanation,
+      isBreach: isBreach,
+    });
+
+    setDisplayedMessages((prev) => [
+      ...prev,
+      {
+        message_id: `blue-${roundNum}-${Date.now()}`,
+        round_index: roundNum,
+        speaker: "BLUE_GUARDIAN",
+        message: blueExplanation,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    // Blue Guardian speaks defense decision
+    if (voiceEnabled) {
+      await speakDialogue(blueExplanation, "BLUE_GUARDIAN");
+    } else {
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+
+    // -------------------------------------------------------------
+    // STAGE 4: ROUND RESOLVED & SYNC BACKEND STATE
+    // -------------------------------------------------------------
+    setPhase("ROUND_RESOLVED");
+
+    const sysMsg = rec.blue_guardian_decision === "BLOCK"
+      ? `Shield engaged: Attack prevented. Defensive policy updated to ${res.state.scoreboard.policy_version}.`
+      : `Baseline execution observed. Negative reward logged. Policy training initiated.`;
+
+    setDisplayedMessages((prev) => [
+      ...prev,
+      {
+        message_id: `sys-${roundNum}-${Date.now()}`,
+        round_index: roundNum,
+        speaker: "SYSTEM",
+        message: sysMsg,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    // Commit full backend state: updates scoreboard, timeline, learning progress
+    setState(res.state);
+    setPhase("IDLE");
+  };
+
   // Execute single next round
   const handleStepNextRound = async () => {
     if (isSteppingRef.current) return;
@@ -187,15 +338,7 @@ export function AgentArenaView() {
     setStepping(true);
     try {
       const res = await api.arena.stepNextRound();
-      setState(res.state);
-
-      // Trigger voices for both agents
-      const record = res.round_record;
-      if (record && voiceEnabled) {
-        await speakDialogue(record.red_team_prompt, "RED_TEAM");
-        await new Promise((r) => setTimeout(r, 400));
-        await speakDialogue(record.explanation || "Action evaluated by defensive gate.", "BLUE_GUARDIAN");
-      }
+      await executeRoundSequence(res);
     } catch (err: any) {
       setErrorMsg(err.message || "Error advancing round.");
     } finally {
@@ -205,7 +348,7 @@ export function AgentArenaView() {
   };
 
   // ---------------------------------------------------------------------------
-  // FULL 6-ROUND AUTONOMOUS SIMULATION WITH GEMINI VOICE
+  // FULL 6-ROUND AUTONOMOUS SIMULATION WITH STAGED MULTI-AGENT TIMING
   // ---------------------------------------------------------------------------
   const handleRunSimulation = async () => {
     if (isRunningSimulationRef.current) return;
@@ -220,6 +363,11 @@ export function AgentArenaView() {
       if (currentR >= 6 || currentR > 0) {
         const resetRes = await api.arena.reset(false);
         setState(resetRes.state);
+        setDisplayedMessages([]);
+        setStagedRoundIndex(null);
+        setStagedRedPrompt(null);
+        setStagedBlueDecision(null);
+        setStagedActiveTool(null);
         setElapsedSeconds(0);
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
@@ -229,21 +377,7 @@ export function AgentArenaView() {
         if (!isRunningSimulationRef.current) break;
 
         const res = await api.arena.stepNextRound();
-        setState(res.state);
-
-        const rec = res.round_record;
-        if (rec && voiceEnabled) {
-          // 1. Red Agent speaks attack prompt
-          await speakDialogue(rec.red_team_prompt, "RED_TEAM");
-          await new Promise((r) => setTimeout(r, 350));
-          // 2. Blue Guardian speaks defensive decision
-          if (isRunningSimulationRef.current) {
-            await speakDialogue(
-              rec.explanation || (rec.blue_guardian_decision === "BLOCK" ? "Action blocked." : "Action allowed."),
-              "BLUE_GUARDIAN"
-            );
-          }
-        }
+        await executeRoundSequence(res);
 
         // Inter-round buffer
         if (roundTarget < 6 && isRunningSimulationRef.current) {
@@ -260,6 +394,7 @@ export function AgentArenaView() {
       isRunningSimulationRef.current = false;
       setIsSpeaking(false);
       setSpeakingAgent(null);
+      setPhase("IDLE");
     }
   };
 
@@ -268,6 +403,7 @@ export function AgentArenaView() {
     setIsRunningSimulation(false);
     setIsSpeaking(false);
     setSpeakingAgent(null);
+    setPhase("IDLE");
 
     if (activeAudioRef.current) {
       activeAudioRef.current.pause();
@@ -287,6 +423,11 @@ export function AgentArenaView() {
     try {
       const res = await api.arena.reset(false);
       setState(res.state);
+      setDisplayedMessages([]);
+      setStagedRoundIndex(null);
+      setStagedRedPrompt(null);
+      setStagedBlueDecision(null);
+      setStagedActiveTool(null);
       setElapsedSeconds(0);
       setErrorMsg(null);
     } catch (err: any) {
@@ -298,7 +439,7 @@ export function AgentArenaView() {
   };
 
   // Derive metrics
-  const currentRoundNum = state?.current_round || 0;
+  const currentRoundNum = stagedRoundIndex !== null ? stagedRoundIndex : (state?.current_round || 0);
   const totalRoundsMax = 6;
   const latestRound: ArenaRoundRecord | null = state?.latest_round || null;
   const history = state?.round_history || [];
@@ -310,7 +451,7 @@ export function AgentArenaView() {
     (r) => r.blue_guardian_decision === "BLOCK" || r.outcome === "CORRECT_BLOCK"
   ).length;
 
-  const totalAttacksCount = currentRoundNum;
+  const totalAttacksCount = history.length;
   const attackSuccessRate =
     totalAttacksCount > 0 ? ((breachesCount / totalAttacksCount) * 100).toFixed(0) : "0";
   const preventionRate =
@@ -322,9 +463,21 @@ export function AgentArenaView() {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const activeTool = latestRound?.proposed_tool?.toLowerCase() || (currentRoundNum === 0 ? "none" : "payment");
-  const isRound1Breach = latestRound?.round_index === 1 && (latestRound.outcome === "BREACH" || latestRound.outcome === "DETECTED_AND_EXECUTED");
-  const isShieldDeflecting = latestRound && latestRound.round_index > 1 && latestRound.blue_guardian_decision === "BLOCK";
+  const activeTool =
+    phase === "RED_ATTACKING"
+      ? "none"
+      : stagedActiveTool !== null
+      ? stagedActiveTool
+      : latestRound?.proposed_tool?.toLowerCase() || (currentRoundNum === 0 ? "none" : "payment");
+
+  const isRound1Breach =
+    stagedBlueDecision?.isBreach ??
+    (latestRound?.round_index === 1 && (latestRound.outcome === "BREACH" || latestRound.outcome === "DETECTED_AND_EXECUTED"));
+
+  const isShieldDeflecting =
+    (phase === "BLUE_DEFENDING" || phase === "ROUND_RESOLVED" || phase === "IDLE") &&
+    (stagedBlueDecision?.decision === "BLOCK" ||
+      (latestRound && latestRound.round_index > 1 && latestRound.blue_guardian_decision === "BLOCK"));
 
   // Clean Timeline Data
   const timelineRounds = [
@@ -506,12 +659,12 @@ export function AgentArenaView() {
                       )}
                     </span>
                     <span className="text-red-400/80 font-mono text-[8px]">
-                      {latestRound?.vector_type || "ADVERSARY"}
+                      {stagedVectorType || latestRound?.vector_type || "ADVERSARY"}
                     </span>
                   </div>
                   <p className="text-[11px] text-red-100 font-medium leading-snug italic break-words line-clamp-3">
                     &ldquo;
-                    {latestRound ? latestRound.red_team_prompt : "Initiate simulated tool exploit payload."}
+                    {stagedRedPrompt || latestRound?.red_team_prompt || "Initiate simulated tool exploit payload."}
                     &rdquo;
                   </p>
                   <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-red-500/60" />
@@ -542,7 +695,7 @@ export function AgentArenaView() {
                 <div className="w-full mt-1 p-2 rounded-xl bg-white/[0.02] border border-red-900/40 text-left space-y-0.5 backdrop-blur-md">
                   <div className="text-[11px] font-bold text-red-400">RED AGENT</div>
                   <div className="text-[10px] text-slate-400 font-mono truncate">
-                    {latestRound?.scenario_name || "Adversary Strategy Engine"}
+                    {stagedScenarioName || latestRound?.scenario_name || "Adversary Strategy Engine"}
                   </div>
                 </div>
               </div>
@@ -644,22 +797,36 @@ export function AgentArenaView() {
                 >
                   <div className="flex items-center justify-between text-[9px] font-mono font-bold text-cyan-400 uppercase tracking-wider mb-0.5">
                     <span className="flex items-center gap-1">
-                      <span>&gt; Decision</span>
+                      <span>
+                        {phase === "RED_ATTACKING"
+                          ? "> Evaluating"
+                          : phase === "TARGET_PROCESSING"
+                          ? "> Inspecting"
+                          : "> Decision"}
+                      </span>
                       {speakingAgent === "BLUE_GUARDIAN" && (
                         <Volume2 className="w-3 h-3 text-cyan-400 animate-pulse" />
                       )}
+                      {(phase === "RED_ATTACKING" || phase === "TARGET_PROCESSING") && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                      )}
                     </span>
                     <span className="text-cyan-400/80 font-mono text-[8px]">
-                      {latestRound?.blue_guardian_decision || "INSPECT"}
+                      {phase === "RED_ATTACKING" || phase === "TARGET_PROCESSING"
+                        ? "ANALYZING..."
+                        : stagedBlueDecision?.decision || latestRound?.blue_guardian_decision || "INSPECT"}
                     </span>
                   </div>
                   <p className="text-[11px] text-cyan-100 font-medium leading-snug italic break-words line-clamp-3">
                     &ldquo;
-                    {isRound1Breach
-                      ? "Baseline policy allowed action. Penalty applied. Learning defense."
-                      : latestRound
-                      ? latestRound.explanation || "Action evaluated by defensive gate."
-                      : "Reinforcement learning gate active."}
+                    {phase === "RED_ATTACKING"
+                      ? "Analyzing incoming attack vector & verifying security constraints..."
+                      : phase === "TARGET_PROCESSING"
+                      ? "Inspecting tool execution request against active defense policy..."
+                      : stagedBlueDecision?.explanation ||
+                        (isRound1Breach
+                          ? "Baseline policy allowed action. Penalty applied. Learning defense."
+                          : latestRound?.explanation || "Reinforcement learning gate active.")}
                     &rdquo;
                   </p>
                   <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-cyan-500/60" />
@@ -685,8 +852,22 @@ export function AgentArenaView() {
                   <div className="text-[11px] font-bold text-cyan-400">BLUE GUARDIAN</div>
                   <div className="text-[10px] text-slate-400 font-mono truncate">
                     Status:{" "}
-                    <strong className={isRound1Breach ? "text-rose-400" : "text-emerald-300"}>
-                      {isRound1Breach ? "Breached (Baseline)" : latestRound ? "Blocked (Learned)" : "Standing By"}
+                    <strong
+                      className={
+                        phase === "RED_ATTACKING" || phase === "TARGET_PROCESSING"
+                          ? "text-cyan-300 animate-pulse"
+                          : isRound1Breach
+                          ? "text-rose-400"
+                          : "text-emerald-300"
+                      }
+                    >
+                      {phase === "RED_ATTACKING" || phase === "TARGET_PROCESSING"
+                        ? "Analyzing..."
+                        : isRound1Breach
+                        ? "Breached (Baseline)"
+                        : latestRound || stagedBlueDecision
+                        ? "Blocked (Learned)"
+                        : "Standing By"}
                     </strong>
                   </div>
                 </div>
@@ -718,13 +899,13 @@ export function AgentArenaView() {
                 onScroll={handleChatScroll}
                 className="flex-1 overflow-y-auto space-y-2 py-2 pr-1 max-h-[260px] scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent text-xs"
               >
-                {(!state?.conversation_stream || state.conversation_stream.length === 0) && (
+                {displayedMessages.length === 0 && (
                   <div className="py-8 text-center text-slate-500 text-xs">
                     Click <strong>&quot;Run Simulation&quot;</strong> to start multi-vector attacks and AI voice synthesis.
                   </div>
                 )}
 
-                {state?.conversation_stream?.map((msg, i) => {
+                {displayedMessages.map((msg: any, i: number) => {
                   const isRed = msg.speaker === "RED_TEAM";
                   const isBlue = msg.speaker === "BLUE_GUARDIAN";
                   const isTarget = msg.speaker === "TARGET_AGENT";

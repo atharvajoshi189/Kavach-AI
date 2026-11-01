@@ -1,12 +1,15 @@
-"""REST API Endpoints for the Autonomous Agent Security Arena with Gemini Audio Voice Generation."""
+"""REST API Endpoints for the Autonomous Agent Security Arena with Multi-Tier TTS Voice Engine."""
 
 from __future__ import annotations
 
 import base64
 import io
 import logging
-from typing import Any, Dict, Optional
+import os
+import tempfile
+import uuid
 import wave
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
@@ -35,12 +38,61 @@ class ResetArenaRequest(BaseModel):
 
 class SpeakRequest(BaseModel):
     text: str
-    voice: Optional[str] = "Puck"  # "Puck" (energetic/red), "Fenrir" (authoritative/blue), "Aoede"
+    voice: Optional[str] = "Puck"  # "Puck" (Red Agent) or "Fenrir" / "Aoede" (Blue Guardian)
+
+
+def _generate_offline_high_quality_wav(clean_text: str, is_red: bool) -> Optional[str]:
+    """Generates crystal-clear 16-bit WAV audio using local pyttsx3/SAPI5 synthesizer."""
+    try:
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
+
+        import pyttsx3
+
+        engine = pyttsx3.init()
+        voices = engine.getProperty("voices")
+
+        # Pick distinct voice for Red Agent vs Blue Guardian
+        # Red Agent: Male / David (adversarial cyber tone)
+        # Blue Guardian: Female / Zira (crystal-clear, authoritative defense tone)
+        if voices:
+            if is_red:
+                male_v = next((v.id for v in voices if "david" in v.name.lower() or "male" in v.name.lower()), voices[0].id)
+                engine.setProperty("voice", male_v)
+                engine.setProperty("rate", 175)
+                engine.setProperty("volume", 1.0)
+            else:
+                female_v = next((v.id for v in voices if "zira" in v.name.lower() or "female" in v.name.lower()), voices[-1].id)
+                engine.setProperty("voice", female_v)
+                engine.setProperty("rate", 165)
+                engine.setProperty("volume", 1.0)
+
+        temp_wav_path = os.path.join(tempfile.gettempdir(), f"kavach_voice_{uuid.uuid4().hex}.wav")
+        engine.save_to_file(clean_text, temp_wav_path)
+        engine.runAndWait()
+        engine.stop()
+
+        if os.path.exists(temp_wav_path):
+            with open(temp_wav_path, "rb") as f:
+                wav_bytes = f.read()
+            try:
+                os.remove(temp_wav_path)
+            except Exception:
+                pass
+            return f"data:audio/wav;base64,{base64.b64encode(wav_bytes).decode('utf-8')}"
+    except Exception as exc:
+        logger.warning("pyttsx3 offline audio generation failed: %s", exc)
+    return None
 
 
 @router.post("/speak", response_model=Dict[str, Any])
 async def generate_agent_speech(payload: SpeakRequest) -> Dict[str, Any]:
-    """Generate audio speech using Gemini TTS (gemini-2.5-flash-preview-tts) with WAV encoding."""
+    """Generate crystal-clear speech using Gemini AI TTS or offline crystal-clear audio engine."""
+    import re
+
     if not payload.text or not payload.text.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -48,10 +100,17 @@ async def generate_agent_speech(payload: SpeakRequest) -> Dict[str, Any]:
         )
 
     clean_text = payload.text.strip()
-    # Limit length for responsive low-latency playback
-    if len(clean_text) > 400:
-        clean_text = clean_text[:400]
+    # Format dollars for natural audio output
+    clean_text = re.sub(r"\$(\d+(?:,\d+)*)", r"\1 dollars", clean_text)
+    # Strip distracting markdown fences, curly brackets, quotes and formatting
+    clean_text = re.sub(r'[{}\[\]"\'`*_#<>]', ' ', clean_text)
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+    if len(clean_text) > 350:
+        clean_text = clean_text[:350]
 
+    is_red = payload.voice in ["Puck", "Charon"]
+
+    # 1. Attempt Gemini TTS first if quota is available
     try:
         from google import genai
         from google.genai import types
@@ -94,13 +153,26 @@ async def generate_agent_speech(payload: SpeakRequest) -> Dict[str, Any]:
             "source": "gemini",
         }
     except Exception as exc:
-        logger.warning("Gemini TTS audio generation failed (%s). Falling back to Web Speech synthesis.", exc)
+        logger.info("Gemini TTS quota hit or unavailable (%s). Switching to crystal-clear offline studio TTS.", exc)
+
+    # 2. Offline Studio Quality WAV Synthesizer (Crystal Clear Audio)
+    offline_audio = _generate_offline_high_quality_wav(clean_text, is_red=is_red)
+    if offline_audio:
         return {
-            "status": "fallback",
-            "audio_base64": None,
-            "message": str(exc),
-            "source": "browser_fallback",
+            "status": "success",
+            "audio_base64": offline_audio,
+            "voice": "David" if is_red else "Zira",
+            "format": "wav",
+            "source": "studio_wav",
         }
+
+    # 3. Fallback to client-side browser synthesis
+    return {
+        "status": "fallback",
+        "audio_base64": None,
+        "message": "Web speech fallback",
+        "source": "browser_fallback",
+    }
 
 
 @router.post("/start", response_model=Dict[str, Any])
