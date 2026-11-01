@@ -118,6 +118,16 @@ deny_reasons contains "AI intelligence analysis prohibited outside sandbox envir
     ai_non_sandbox
 }
 
+deny_reasons contains "Viewer role is not authorized for email delivery." if {
+    input.subject.role == "viewer"
+    is_email_delivery
+}
+
+deny_reasons contains "Security Operator or Admin role required for email delivery." if {
+    is_email_delivery
+    not input.subject.role in ["admin", "security_operator"]
+}
+
 deny_reasons contains "Viewer role is not authorized for AI intelligence operations." if {
     input.subject.role == "viewer"
     is_ai_operation
@@ -269,6 +279,30 @@ ai_non_sandbox if {
     input.resource.environment != "sandbox"
 }
 
+# Helpers for Email Gateway integration operations
+is_email_delivery if {
+    input.action.operation in [
+        "email.delivery_request",
+        "email.send"
+    ]
+}
+
+is_email_read if {
+    input.action.operation in [
+        "email.template_list",
+        "email.delivery_read",
+        "email.status_read"
+    ]
+}
+
+is_email_operation if {
+    is_email_delivery
+}
+
+is_email_operation if {
+    is_email_read
+}
+
 # Explicit allow rules (narrowly scoped)
 
 # 1. Admin operations: Allowed for admin users (excluding unapproved policy modifications and non-sandbox target/redteam/guardian/ai operations)
@@ -392,3 +426,18 @@ allow if {
     input.subject.role in ["admin", "security_operator"]
     is_ai_usage
 }
+
+# 15. Email Gateway delivery execution: Allowed strictly for Security Operator and Admin
+allow if {
+    input.subject.is_authenticated
+    input.subject.role in ["admin", "security_operator"]
+    is_email_delivery
+}
+
+# 16. Email Gateway read and template discovery: Allowed for authenticated platform users
+allow if {
+    input.subject.is_authenticated
+    input.subject.role in ["admin", "security_operator", "security_analyst", "viewer"]
+    is_email_read
+}
+

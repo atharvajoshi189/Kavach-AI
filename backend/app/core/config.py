@@ -5,7 +5,8 @@ Sensitive credentials and secrets are loaded from the environment and never hard
 """
 
 from functools import lru_cache
-from pydantic import AliasChoices, Field, model_validator
+from typing import Any
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -149,12 +150,54 @@ class Settings(BaseSettings):
         description="Maximum output token budget for Gemini responses",
     )
 
+    # External Integrations - Email Gateway settings
+    EMAIL_PROVIDER: str = Field(
+        default="resend",
+        validation_alias=AliasChoices("EMAIL_PROVIDER"),
+        description="Configured transactional email provider ('resend')",
+    )
+    EMAIL_MODE: str = Field(
+        default="test",
+        validation_alias=AliasChoices("EMAIL_MODE"),
+        description="Email gateway execution mode ('test' or 'production'). Production disabled in Step 10.1.",
+    )
+    RESEND_API_KEY: str | None = Field(
+        default="re_test_mode_simulation_key",
+        validation_alias=AliasChoices("RESEND_API_KEY"),
+        description="Secret API key for Resend email service. Never exposed in logs, repr, or API responses.",
+    )
+    EMAIL_FROM_ADDRESS: str = Field(
+        default="security@aegismesh.local",
+        validation_alias=AliasChoices("EMAIL_FROM_ADDRESS"),
+        description="Trusted server-configured sender address for security notifications.",
+    )
+    EMAIL_ALLOWED_RECIPIENTS: list[str] = Field(
+        default_factory=lambda: [
+            "secops@aegismesh.local",
+            "operator@aegismesh.local",
+            "admin@aegismesh.local",
+            "test@aegismesh.local",
+        ],
+        validation_alias=AliasChoices("EMAIL_ALLOWED_RECIPIENTS"),
+        description="Allowlisted recipient email addresses permitted during test mode.",
+    )
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
     )
+
+    @field_validator("EMAIL_ALLOWED_RECIPIENTS", mode="before")
+    @classmethod
+    def parse_allowed_recipients(cls, v: Any) -> list[str]:
+        """Parses comma-separated strings or string lists into a normalized lowercase list."""
+        if isinstance(v, str):
+            return [addr.strip().lower() for addr in v.split(",") if addr.strip()]
+        if isinstance(v, (list, tuple, set)):
+            return [str(addr).strip().lower() for addr in v if str(addr).strip()]
+        return v
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":
