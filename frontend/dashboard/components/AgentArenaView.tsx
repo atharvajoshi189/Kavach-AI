@@ -479,14 +479,14 @@ export function AgentArenaView() {
     (stagedBlueDecision?.decision === "BLOCK" ||
       (latestRound && latestRound.round_index > 1 && latestRound.blue_guardian_decision === "BLOCK"));
 
-  // Clean Timeline Data
+  // Dynamic Timeline Rounds (Escalating multi-vector adaptive flow)
   const timelineRounds = [
-    { num: 1, title: "R1 — Email/Wire Attack", tool: "payment" },
-    { num: 2, title: "R2 — Wire Re-Attempt", tool: "payment" },
-    { num: 3, title: "R3 — Browser Exploit", tool: "browser" },
-    { num: 4, title: "R4 — Benign Balance Check", tool: "payment" },
-    { num: 5, title: "R5 — Files Exfiltration", tool: "files" },
-    { num: 6, title: "R6 — Cross-Tool Attack", tool: "browser" },
+    { num: 1, title: "R1 — Level 1: Email Baseline Infiltration", tool: "email" },
+    { num: 2, title: "R2 — Level 2: Cloud Metadata SSRF", tool: "browser" },
+    { num: 3, title: "R3 — Level 3: Shadow Config Traversal", tool: "files" },
+    { num: 4, title: "R4 — Level 4: Wire Parameter Tampering", tool: "payment" },
+    { num: 5, title: "R5 — Level 5: Cross-Tool Payload Chain", tool: "browser" },
+    { num: 6, title: "R6 — Level 6: Polyglot Zero-Day Evasion", tool: "payment" },
   ];
 
   // SVG prevention curve
@@ -1007,7 +1007,9 @@ export function AgentArenaView() {
                           : "border-transparent opacity-50"
                       }`}
                     >
-                      <span className="text-[11px] font-medium text-slate-300 truncate">{r.title}</span>
+                      <span className="text-[11px] font-medium text-slate-300 truncate">
+                        {record ? `R${r.num} — ${record.scenario_name}` : r.title}
+                      </span>
                       {isPast && isBreach && (
                         <span className="px-1.5 py-0.2 rounded bg-rose-950/80 text-rose-300 border border-rose-700 text-[9px] font-mono font-bold">
                           BREACH

@@ -56,7 +56,7 @@ def _generate_offline_high_quality_wav(clean_text: str, is_red: bool) -> Optiona
         voices = engine.getProperty("voices")
 
         # Pick distinct voice for Red Agent vs Blue Guardian
-        # Red Agent: Male / David (adversarial cyber tone)
+        # Red Agent: Male / David (deeper, aggressive cyber tone)
         # Blue Guardian: Female / Zira (crystal-clear, authoritative defense tone)
         if voices:
             if is_red:
@@ -100,9 +100,7 @@ async def generate_agent_speech(payload: SpeakRequest) -> Dict[str, Any]:
         )
 
     clean_text = payload.text.strip()
-    # Format dollars for natural audio output
     clean_text = re.sub(r"\$(\d+(?:,\d+)*)", r"\1 dollars", clean_text)
-    # Strip distracting markdown fences, curly brackets, quotes and formatting
     clean_text = re.sub(r'[{}\[\]"\'`*_#<>]', ' ', clean_text)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
     if len(clean_text) > 350:
