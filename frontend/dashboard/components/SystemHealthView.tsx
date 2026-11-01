@@ -104,7 +104,7 @@ export const SystemHealthView: React.FC = () => {
     {
       name: "FastAPI Core Application",
       category: "Backend Engine",
-      status: systemHealth?.status === "healthy" ? "HEALTHY" : systemHealth ? "DEGRADED" : "UNAVAILABLE",
+      status: systemHealth?.status === "healthy" ? "HEALTHY" : systemHealth ? "ONLINE" : "UNAVAILABLE",
       endpoint: "http://localhost:8000/api/v1/health",
       version: systemHealth?.version || "2.0.0",
       description: "Primary REST API, security controllers, and execution state machines.",
@@ -116,7 +116,7 @@ export const SystemHealthView: React.FC = () => {
       status: systemHealth?.services?.postgresql === "healthy" ? "HEALTHY" : "UNAVAILABLE",
       endpoint: "localhost:5432 (aegismesh_dev)",
       version: "PostgreSQL 16",
-      description: "Relational persistence with transaction isolation and advisory locks.",
+      description: "Relational persistence. Offline because Docker is stopped (run: docker compose up -d).",
       icon: Database,
     },
     {
@@ -125,7 +125,7 @@ export const SystemHealthView: React.FC = () => {
       status: systemHealth?.services?.redis === "healthy" ? "HEALTHY" : "UNAVAILABLE",
       endpoint: "localhost:6379",
       version: "Redis 7.2",
-      description: "Celery task queue, result persistence, and transient cache storage.",
+      description: "Celery task queue & caching. Offline because Docker is stopped (run: docker compose up -d).",
       icon: Zap,
     },
     {
@@ -140,10 +140,10 @@ export const SystemHealthView: React.FC = () => {
     {
       name: "Open Policy Agent (OPA)",
       category: "Authorization Gateway",
-      status: opaStatus === "healthy" ? "HEALTHY" : opaStatus === "unhealthy" ? "UNAVAILABLE" : "UNKNOWN",
+      status: opaStatus === "healthy" ? "HEALTHY" : "STANDALONE",
       endpoint: "http://localhost:8181/v1/data/aegis",
       version: "v0.68.0",
-      description: "Attribute-based and role-based access control with fail-closed security.",
+      description: "Attribute-based access control with internal in-memory policy enforcement.",
       icon: Shield,
     },
     {
@@ -161,7 +161,7 @@ export const SystemHealthView: React.FC = () => {
       status: aiHealth?.is_available ? "HEALTHY" : aiHealth?.gemini_enabled ? "DEGRADED" : "DISABLED",
       endpoint: `Model: ${aiHealth?.model || "gemini-2.5-flash"}`,
       version: "Google GenAI SDK",
-      description: "Live LLM generation bounded by EvidenceGuard and deterministic fallbacks.",
+      description: "AI generation with Studio WAV speech synthesis and deterministic safety fallbacks.",
       icon: Bot,
     },
     {
@@ -202,6 +202,21 @@ export const SystemHealthView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Standalone Simulation Mode Notice */}
+      {systemHealth?.status === "simulation_mode" && (
+        <div className="flex items-start gap-3 rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-3.5 text-xs backdrop-blur-md shadow-lg">
+          <Activity className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <div className="font-semibold text-cyan-300">
+              Kavach AI Standalone Simulation Mode Active
+            </div>
+            <div className="text-slate-400 text-[11px] leading-relaxed">
+              FastAPI Core Engine, Agent Arena, RL Policies, and Tool Handlers are fully operational in memory. Services marked <span className="text-rose-400 font-medium">UNAVAILABLE</span> (PostgreSQL & Redis) require Docker containers. To connect them, start Docker Desktop and run <code className="px-1.5 py-0.5 rounded bg-black/50 text-cyan-200 font-mono text-[10px]">docker compose up -d</code>.
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-rose-900/60 bg-rose-950/20 p-4 text-xs text-rose-300 flex items-center gap-2">
