@@ -62,12 +62,12 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="absolute inset-0 rounded-lg ring-1 ring-emerald-400/30 animate-pulse pointer-events-none" />
           </div>
           <div>
-            <div className="flex items-center gap-1 font-bold tracking-wider text-sm text-white">
-              <span>AEGISMESH</span>
-              <span className="text-white font-black">2.0</span>
+            <div className="flex items-center gap-1.5 font-bold tracking-wider text-sm text-white">
+              <span>KAVACH</span>
+              <span className="text-cyan-400 font-black">AI</span>
             </div>
             <p className="text-[10px] text-slate-400 tracking-wide font-normal -mt-0.5">
-              SOC Command Center
+              AI Security Command Center
             </p>
           </div>
         </div>

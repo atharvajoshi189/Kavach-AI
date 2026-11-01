@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AegisMesh 2.0 — SOC Command Center",
-  description: "Autonomous AI Security Operations & Attack Path Orchestration Platform",
+  title: "Kavach AI — SOC Command Center",
+  description: "Kavach AI — Autonomous AI Security Operations & Agent Arena Defense Platform",
 };
 
 export default function RootLayout({

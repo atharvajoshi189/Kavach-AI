@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """AegisMesh API application settings."""
 
-    PROJECT_NAME: str = "AegisMesh API"
+    PROJECT_NAME: str = "Kavach AI API"
     VERSION: str = "2.0.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"

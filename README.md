@@ -1,4 +1,4 @@
-# 🛡️ Kavach-AI (AegisMesh 2.0)
+# 🛡️ Kavach AI
 ### **Autonomous AI Agent Security Arena & Self-Learning Cyber Defense Platform**
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?style=flat&logo=fastapi)](https://fastapi.tiangolo.com)
@@ -12,7 +12,7 @@
 
 ## 📌 Overview
 
-**Kavach-AI (AegisMesh 2.0)** is an autonomous multi-agent cybersecurity simulation platform that models adversarial interactions between autonomous AI agents and evaluates self-learning defensive gates using **Reinforcement Learning (Q-learning)**.
+**Kavach AI** is an autonomous multi-agent cybersecurity simulation platform that models adversarial interactions between autonomous AI agents and evaluates self-learning defensive gates using **Reinforcement Learning (Q-learning)**.
 
 The central experience is the **Agent Arena (Red vs Blue)**:
 1. **Adversarial Red Team Agent**: Generates multi-vector adversarial prompts attempting to manipulate an operational Target Agent through 4 simulated tools (**Browser**, **Email**, **Files**, and **Payment**).
@@ -193,3 +193,4 @@ All 16 test cases verify:
 ## 🛡️ License
 
 This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.
+
