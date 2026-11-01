@@ -80,7 +80,7 @@ export function AgentArenaView() {
       }
       setErrorMsg(null);
     } catch (err: any) {
-      console.error("Failed to load arena state", err);
+      console.warn("Failed to load arena state:", err?.message);
     } finally {
       setLoading(false);
     }
